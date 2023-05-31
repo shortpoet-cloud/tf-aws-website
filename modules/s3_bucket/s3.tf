@@ -9,6 +9,7 @@ data "aws_iam_user" "admin" {
 }
 locals {
   # caller_arn           = "arn:aws:iam::${data.aws_caller_identity.current.account_id}"
+  # TODO move to parent module as allowed ips
   cloudflare_ip_ranges = concat(data.cloudflare_ip_ranges.cloudflare.ipv4_cidr_blocks, data.cloudflare_ip_ranges.cloudflare.ipv6_cidr_blocks)
   tags = merge(
     {
