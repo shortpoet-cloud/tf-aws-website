@@ -1,3 +1,24 @@
+# TODO - plan bug
+# Terraform will perform the following actions:
+
+#   # module.s3_root_www.aws_s3_bucket_website_configuration.redirect[0] will be updated in-place
+#   ~ resource "aws_s3_bucket_website_configuration" "redirect" {
+#         id               = "www.shortpoet.com"
+#         # (3 unchanged attributes hidden)
+
+#       - error_document {
+#           - key = "index.html" -> null
+#         }
+
+#       - index_document {
+#           - suffix = "index.html" -> null
+#         }
+
+#       + redirect_all_requests_to {
+#           + host_name = "shortpoet.com"
+#         }
+#     }
+
 data "cloudflare_ip_ranges" "cloudflare" {}
 data "aws_canonical_user_id" "current" {}
 # data "aws_caller_identity" "current" {}
