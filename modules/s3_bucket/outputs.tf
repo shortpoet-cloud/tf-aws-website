@@ -14,5 +14,6 @@ output "website_domain" {
 }
 
 output "tags" {
-  value = aws_s3_bucket.site.tags
+  description = "Tags applied to the bucket"
+  value       = aws_s3_bucket.site.tags
 }

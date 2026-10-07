@@ -6,7 +6,7 @@
 #   }
 # }
 
-resource "aws_s3_bucket_object" "this" {
+resource "aws_s3_object" "this" {
   for_each = local.website_files
 
   bucket              = local.bucket
@@ -38,4 +38,15 @@ resource "aws_s3_bucket_object" "this" {
   depends_on = [local.module_depends_on]
 
   tags = local.tags
+}
+
+# aws_s3_bucket_object is deprecated, and provider 5 cannot move its state to
+# aws_s3_object. Forget the old instances without deleting the objects;
+# aws_s3_object then puts each current file over its existing key once.
+removed {
+  from = aws_s3_bucket_object.this
+
+  lifecycle {
+    destroy = false
+  }
 }

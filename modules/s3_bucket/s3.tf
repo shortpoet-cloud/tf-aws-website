@@ -1,26 +1,4 @@
-# TODO - plan bug
-# Terraform will perform the following actions:
-
-#   # module.s3_root_www.aws_s3_bucket_website_configuration.redirect[0] will be updated in-place
-#   ~ resource "aws_s3_bucket_website_configuration" "redirect" {
-#         id               = "www.shortpoet.com"
-#         # (3 unchanged attributes hidden)
-
-#       - error_document {
-#           - key = "index.html" -> null
-#         }
-
-#       - index_document {
-#           - suffix = "index.html" -> null
-#         }
-
-#       + redirect_all_requests_to {
-#           + host_name = "shortpoet.com"
-#         }
-#     }
-
 data "cloudflare_ip_ranges" "cloudflare" {}
-data "aws_canonical_user_id" "current" {}
 # data "aws_caller_identity" "current" {}
 data "aws_iam_role" "terraform_admin" {
   name = "terraform-admin"
@@ -32,6 +10,7 @@ locals {
   # caller_arn           = "arn:aws:iam::${data.aws_caller_identity.current.account_id}"
   # TODO move to parent module as allowed ips
   cloudflare_ip_ranges = concat(data.cloudflare_ip_ranges.cloudflare.ipv4_cidr_blocks, data.cloudflare_ip_ranges.cloudflare.ipv6_cidr_blocks)
+  redirects            = var.redirect_all_requests_to != null
   tags = merge(
     {
       Name = var.site_domain_bucket_name
@@ -46,34 +25,31 @@ resource "aws_s3_bucket" "site" {
   tags = local.tags
 }
 
-resource "aws_s3_bucket_website_configuration" "redirect" {
-  count  = var.redirect_all_requests_to != null ? 1 : 0
-  bucket = aws_s3_bucket.site.id
-
-  redirect_all_requests_to {
-    host_name = var.redirect_all_requests_to
-  }
-}
-
-
 resource "aws_s3_bucket_website_configuration" "site" {
   bucket = aws_s3_bucket.site.id
 
-  # conflicts with error document?
-  # https://github.com/shortpoet/sp/actions/runs/4296611474/jobs/7488548411
-  # dynamic "redirect_all_requests_to" {
-  #   for_each = var.redirect_all_requests_to != null ? [var.redirect_all_requests_to] : []
-  #   content {
-  #     host_name = redirect_all_requests_to.value
-  #   }
-  # }
-
-  index_document {
-    suffix = "index.html"
+  # A bucket has one website configuration: either a redirect, or the index and
+  # error documents (they conflict). Two resources on one bucket fought each
+  # other on every plan.
+  dynamic "redirect_all_requests_to" {
+    for_each = local.redirects ? [var.redirect_all_requests_to] : []
+    content {
+      host_name = redirect_all_requests_to.value
+    }
   }
 
-  error_document {
-    key = "index.html"
+  dynamic "index_document" {
+    for_each = local.redirects ? [] : ["index.html"]
+    content {
+      suffix = index_document.value
+    }
+  }
+
+  dynamic "error_document" {
+    for_each = local.redirects ? [] : ["index.html"]
+    content {
+      key = error_document.value
+    }
   }
 
   # routing_rules = jsonencode([
@@ -121,44 +97,34 @@ resource "aws_s3_bucket_cors_configuration" "example" {
 }
 
 
-resource "aws_s3_bucket_acl" "site" {
+module "bucket_baseline" {
+  source = "git::ssh://git@github.com/shortpoet-cloud/tf-aws-s3.git//modules/bucket_baseline?ref=v0.1.0-rc.1"
+
   bucket = aws_s3_bucket.site.id
+  # Website objects are replaced on every deploy; versioning would keep each
+  # old build. The policy grants public reads (Cloudflare IPs only).
+  versioning_enabled  = false
+  allow_public_policy = true
+}
 
-  # acl = "private"
-  # acl = "public-read"
+# The redirect now lives in the one website configuration; forget the second
+# resource without deleting the bucket's website configuration.
+removed {
+  from = aws_s3_bucket_website_configuration.redirect
 
-  access_control_policy {
-    # grant {
-    #   grantee {
-    #     type = "Group"
-    #     uri  = "http://acs.amazonaws.com/groups/global/AllUsers"
-    #   }
-    #   permission = "READ"
-    # }
-
-    grant {
-      grantee {
-        id   = data.aws_canonical_user_id.current.id
-        type = "CanonicalUser"
-      }
-      permission = "FULL_CONTROL"
-    }
-
-    # grant {
-    #   grantee {
-    #     type = "Group"
-    #     uri  = "http://acs.amazonaws.com/groups/s3/LogDelivery"
-    #   }
-    #   permission = "READ_ACP"
-    # }
-
-    owner {
-      id = data.aws_canonical_user_id.current.id
-    }
+  lifecycle {
+    destroy = false
   }
+}
 
+# Ownership is BucketOwnerEnforced, so ACLs no longer apply. Forget the ACL
+# without touching the bucket.
+removed {
+  from = aws_s3_bucket_acl.site
 
-
+  lifecycle {
+    destroy = false
+  }
 }
 
 
@@ -224,4 +190,6 @@ resource "aws_s3_bucket_policy" "site" {
       local.restrict_to_cloudflare_ips,
     ]
   })
+
+  depends_on = [module.bucket_baseline]
 }

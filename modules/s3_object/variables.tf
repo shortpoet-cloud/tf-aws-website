@@ -78,9 +78,9 @@ variable "file_glob_pattern" {
 # }
 
 variable "acl" {
-  description = "(Optional) The canned ACL to apply. Defaults to private."
+  description = "(Optional) Canned ACL. Leave null for buckets with BucketOwnerEnforced ownership (bucket_baseline), which reject object ACLs."
   type        = string
-  default     = "private"
+  default     = null
 }
 
 variable "content_disposition" {
