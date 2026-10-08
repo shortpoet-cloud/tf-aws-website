@@ -98,7 +98,7 @@ resource "aws_s3_bucket_cors_configuration" "example" {
 
 
 module "bucket_baseline" {
-  source = "git::ssh://git@github.com/shortpoet-cloud/tf-aws-s3.git//modules/bucket_baseline?ref=v0.1.0-rc.1"
+  source = "git::ssh://git@github.com/shortpoet-cloud/tf-aws-s3.git//modules/bucket_baseline?ref=v0.1.0-rc.2"
 
   bucket = aws_s3_bucket.site.id
   # Website objects are replaced on every deploy; versioning would keep each

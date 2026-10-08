@@ -1,5 +1,33 @@
-mock_provider "aws" {}
-mock_provider "cloudflare" {}
+mock_provider "aws" {
+  override_resource {
+    target          = aws_s3_bucket.site
+    override_during = plan
+    values = {
+      arn = "arn:aws:s3:::example.com"
+    }
+  }
+
+  mock_data "aws_iam_user" {
+    defaults = {
+      user_id = "AIDAADMINISTRATOR"
+    }
+  }
+
+  mock_data "aws_iam_role" {
+    defaults = {
+      unique_id = "AROATERRAFORMADMIN"
+    }
+  }
+}
+
+mock_provider "cloudflare" {
+  mock_data "cloudflare_ip_ranges" {
+    defaults = {
+      ipv4_cidr_blocks = ["173.245.48.0/20"]
+      ipv6_cidr_blocks = ["2400:cb00::/32"]
+    }
+  }
+}
 
 variables {
   site_domain_bucket_name = "example.com"
@@ -36,11 +64,35 @@ run "redirect_bucket_has_one_redirect_only_configuration" {
   }
 }
 
-run "baseline_keeps_acls_off_and_versioning_unchanged" {
+run "public_reads_come_only_from_cloudflare" {
   command = plan
 
   assert {
-    condition     = module.bucket_baseline.allow_public_policy && !module.bucket_baseline.versioning_enabled
-    error_message = "The website bucket allows its public-read policy and stays unversioned."
+    condition = anytrue([
+      for statement in jsondecode(aws_s3_bucket_policy.site.policy).Statement :
+      statement.Effect == "Allow"
+      && statement.Action == "s3:GetObject"
+      && statement.Resource == ["arn:aws:s3:::example.com/*"]
+      && statement.Condition == { IpAddress = { "aws:SourceIp" = ["173.245.48.0/20", "2400:cb00::/32"] } }
+    ])
+    error_message = "Public GetObject must be allowed only from the Cloudflare IP ranges."
+  }
+}
+
+run "everything_else_is_denied_except_the_admins" {
+  command = plan
+
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(aws_s3_bucket_policy.site.policy).Statement :
+      statement.Effect == "Deny"
+      && statement.Action == "s3:*"
+      && statement.Resource == ["arn:aws:s3:::example.com", "arn:aws:s3:::example.com/*"]
+      && statement.Condition == {
+        NotIpAddress  = { "aws:SourceIp" = ["173.245.48.0/20", "2400:cb00::/32"] }
+        StringNotLike = { "aws:userId" = ["AIDAADMINISTRATOR", "AROATERRAFORMADMIN:*"] }
+      }
+    ])
+    error_message = "Requests from outside Cloudflare must be denied, exempting only the Administrator user and terraform-admin role sessions."
   }
 }
