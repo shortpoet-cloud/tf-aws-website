@@ -1,3 +1,4 @@
 output "s3" {
-  value = module.s3
+  description = "Every output of the example website bucket module."
+  value       = module.s3
 }
