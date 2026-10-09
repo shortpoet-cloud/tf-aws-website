@@ -6,7 +6,7 @@
 #   }
 # }
 
-resource "aws_s3_bucket_object" "this" {
+resource "aws_s3_object" "this" {
   for_each = local.website_files
 
   bucket              = local.bucket
@@ -32,10 +32,21 @@ resource "aws_s3_bucket_object" "this" {
   key          = each.key
   source       = "${local.base_folder_path}/${each.key}"
   source_hash  = local.file_hashes[each.key]
-  content_type = contains(local.files_with_no_extension, each.key) ? "text/plain" : lookup(local.mime_types, regex("\\.[^.]+$", each.key), null)
+  content_type = local.content_types[each.key]
   # content_type = data.external.get_mime[each.key].result.mime
   # content_type = var.set_auto_content_type ? length(regexall("^.*\\.(.*)", each.value)) > 0 ? lookup(local.extension_to_mime, element(regex("^.*\\.(.*)", each.value), 0), null) : null : var.content_type
   depends_on = [local.module_depends_on]
 
   tags = local.tags
+}
+
+# aws_s3_bucket_object is deprecated, and provider 5 cannot move its state to
+# aws_s3_object. Forget the old instances without deleting the objects;
+# aws_s3_object then puts each current file over its existing key once.
+removed {
+  from = aws_s3_bucket_object.this
+
+  lifecycle {
+    destroy = false
+  }
 }

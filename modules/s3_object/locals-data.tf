@@ -45,9 +45,16 @@ locals {
     filename => filemd5("${local.base_folder_path}/${filename}")
   }
   mime_types = jsondecode(file("${path.module}/mime.json"))
-  files_with_no_extension = [
-    "_headers"
-  ]
+  # The extension comes from the file name only, so a dotted directory does not
+  # count. Files without one (_headers, CNAME, LICENSE) are text/plain.
+  file_extensions = {
+    for filename in local.website_files :
+    filename => try(regex("\\.[^.]+$", basename(filename)), "")
+  }
+  content_types = {
+    for filename, extension in local.file_extensions :
+    filename => extension == "" ? "text/plain" : lookup(local.mime_types, extension, null)
+  }
 
   module_depends_on = [var.module_depends_on]
 
